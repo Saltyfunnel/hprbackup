@@ -10,6 +10,7 @@ PyQt5 File Manager with LIVE Pywal theming + Hover Preview + Nerd Font Icons + S
 - Semi-transparent panels
 - OPTIMIZED: Async image loading, caching, debouncing to prevent UI hangs
 - HIDDEN SCROLLBARS for cleaner look
+- KEYBOARD DELETE SUPPORT: Delete and Backspace keys delete selected files
 """
 
 import sys, json, shutil, subprocess, tempfile
@@ -98,6 +99,20 @@ class FileManager(QMainWindow):
         self.initUI()
         self.apply_theme()
         self.load_directory(self.current_path)
+
+    # ---------------- Keyboard Event Handler ----------------
+    def keyPressEvent(self, event):
+        """Handle keyboard shortcuts"""
+        key = event.key()
+        
+        # Delete or Backspace key - delete selected files
+        if key in [Qt.Key_Delete, Qt.Key_Backspace]:
+            if self.file_list.selectedItems():
+                self.delete_files()
+                return
+        
+        # Pass to parent for other keys
+        super().keyPressEvent(event)
 
     # ---------------- Live Pywal Reload ----------------
     def reload_pywal_theme(self):
@@ -327,7 +342,7 @@ class FileManager(QMainWindow):
         main.addWidget(self.splitter)
 
         # Status bar
-        self.statusBar().showMessage("Ready")
+        self.statusBar().showMessage("Ready | Tip: Press Delete or Backspace to delete selected files")
 
     # ---------------- Toggle Hidden ----------------
     def toggle_hidden(self, checked):
@@ -508,10 +523,15 @@ class FileManager(QMainWindow):
             # Read /proc/mounts to find mounted devices
             with open('/proc/mounts', 'r') as f:
                 for line in f:
-                    parts = line.split()
+                    # Use split with maxsplit to handle spaces in paths
+                    # Format: device mountpoint fstype options dump pass
+                    parts = line.split(None, 4)  # Split on whitespace, max 5 parts
                     if len(parts) < 2:
                         continue
-                    device, mountpoint = parts[0], parts[1]
+                    
+                    device = parts[0]
+                    # Decode octal escapes (e.g., \040 for space)
+                    mountpoint = parts[1].encode().decode('unicode_escape')
                     
                     # Debug: Check /run/media mounts specifically
                     if '/run/media/' in mountpoint or '/media/' in mountpoint or '/mnt/' in mountpoint:
@@ -610,7 +630,7 @@ class FileManager(QMainWindow):
                 item.setFont(self.icon_font)
                 self.file_list.addItem(item)
                 visible+=1
-            self.statusBar().showMessage(f"{visible} items")
+            self.statusBar().showMessage(f"{visible} items | Tip: Press Delete or Backspace to delete selected files")
             self.update_preview()
         except Exception as e: QMessageBox.critical(self,"Error", str(e))
 
