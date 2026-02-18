@@ -147,6 +147,7 @@ DEV_PACKAGES=(
 FONT_PACKAGES=(
     ttf-jetbrains-mono-nerd
     ttf-iosevka-nerd
+    ttf-cascadia-code-nerd
 )
 
 # Media and file handling
@@ -220,8 +221,8 @@ else
     print_success "Yay already installed"
 fi
 
-run_command "sudo -u $USER_NAME yay -S --noconfirm python-pywal16" \
-    "Installing Pywal16 from AUR"
+run_command "sudo -u $USER_NAME yay -S --noconfirm python-pywal16 python-pywalfox" \
+    "Installing Pywal16 and Pywalfox from AUR"
 
 ################################################################################
 # DIRECTORY STRUCTURE
