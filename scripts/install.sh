@@ -7,35 +7,130 @@
 set -euo pipefail
 
 ################################################################################
+# COLORS & STYLES
+################################################################################
+
+# Reset
+RST="\e[0m"
+
+# Regular colors
+BLK="\e[30m"; RED="\e[31m"; GRN="\e[32m"; YLW="\e[33m"
+BLU="\e[34m"; MAG="\e[35m"; CYN="\e[36m"; WHT="\e[37m"
+
+# Bright colors
+BBLK="\e[90m"; BRED="\e[91m"; BGRN="\e[92m"; BYLW="\e[93m"
+BBLU="\e[94m"; BMAG="\e[95m"; BCYN="\e[96m"; BWHT="\e[97m"
+
+# Styles
+BLD="\e[1m"; DIM="\e[2m"; ITL="\e[3m"; UND="\e[4m"
+
+# Background colors
+BG_BLU="\e[44m"; BG_MAG="\e[45m"; BG_CYN="\e[46m"
+
+# Step tracking
+STEP=0
+TOTAL_STEPS=9
+
+################################################################################
 # HELPER FUNCTIONS
 ################################################################################
 
-print_header() {
-    echo -e "\n\e[1m\e[34m==>\e[0m \e[1m$1\e[0m"
+# Draws a full-width horizontal rule
+hr() {
+    local char="${1:-─}"
+    local color="${2:-$BBLK}"
+    local cols=$(tput cols 2>/dev/null || echo 80)
+    echo -e "${color}$(printf "%${cols}s" | tr ' ' "$char")${RST}"
+}
+
+# Centered text
+center() {
+    local text="$1"
+    local raw="${text//$'\e'[*([0-9;])m/}"   # strip ANSI for width calc
+    local raw2; raw2=$(echo -e "$raw" | sed 's/\x1b\[[0-9;]*m//g')
+    local len=${#raw2}
+    local cols=$(tput cols 2>/dev/null || echo 80)
+    local pad=$(( (cols - len) / 2 ))
+    printf "%${pad}s" ""
+    echo -e "$text"
+}
+
+# Spinner for long operations (ASCII only, no interactive stdin)
+spinner() {
+    local pid=$1
+    local msg="$2"
+    local frames=('▏' '▎' '▍' '▌' '▋' '▊' '▉' '█' '▉' '▊' '▋' '▌' '▍' '▎')
+    local i=0
+    tput civis 2>/dev/null || true   # hide cursor
+    while kill -0 "$pid" 2>/dev/null; do
+        printf "\r  ${BCYN}${frames[$i]}${RST}  ${DIM}${msg}${RST}   "
+        i=$(( (i + 1) % ${#frames[@]} ))
+        sleep 0.08
+    done
+    tput cnorm 2>/dev/null || true   # restore cursor
+    printf "\r"
+}
+
+print_banner() {
+    clear
+    local cols=$(tput cols 2>/dev/null || echo 80)
+    echo ""
+    hr "═" "$BBLU"
+    echo ""
+    center "${BLD}${BCYN}  ██╗  ██╗██╗   ██╗██████╗ ██████╗ ██╗      █████╗ ███╗   ██╗██████╗ ${RST}"
+    center "${BLD}${BCYN}  ██║  ██║╚██╗ ██╔╝██╔══██╗██╔══██╗██║     ██╔══██╗████╗  ██║██╔══██╗${RST}"
+    center "${BLD}${BMAG}  ███████║ ╚████╔╝ ██████╔╝██████╔╝██║     ███████║██╔██╗ ██║██║  ██║${RST}"
+    center "${BLD}${BMAG}  ██╔══██║  ╚██╔╝  ██╔═══╝ ██╔══██╗██║     ██╔══██║██║╚██╗██║██║  ██║${RST}"
+    center "${BLD}${BBLU}  ██║  ██║   ██║   ██║     ██║  ██║███████╗██║  ██║██║ ╚████║██████╔╝${RST}"
+    center "${BLD}${BBLU}  ╚═╝  ╚═╝   ╚═╝   ╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═══╝╚═════╝ ${RST}"
+    echo ""
+    center "${DIM}${WHT}Automated installer for Hyprland · Wayland · Arch Linux · 2026 Edition${RST}"
+    echo ""
+    hr "═" "$BBLU"
+    echo ""
+}
+
+print_phase() {
+    STEP=$((STEP + 1))
+    local title="$1"
+    local icon="${2:-󰣐}"
+    local pct=$(( STEP * 100 / TOTAL_STEPS ))
+
+    echo ""
+    hr "─" "$BBLK"
+    echo -e "  ${BLD}${BBLU}[${STEP}/${TOTAL_STEPS}]${RST}  ${BLD}${BWHT}${title}${RST}  ${DIM}(${pct}%)${RST}"
+    hr "─" "$BBLK"
 }
 
 print_success() {
-    echo -e "\e[32m ✓\e[0m $1"
+    echo -e "  ${BGRN}✔${RST}  $1"
 }
 
 print_error() {
-    echo -e "\e[31m ✗ Error:\e[0m $1" >&2
+    echo ""
+    echo -e "  ${BRED}✘  ERROR:${RST} $1" >&2
+    echo ""
     exit 1
 }
 
 print_info() {
-    echo -e "\e[33m ➜\e[0m $1"
+    echo -e "  ${BCYN}→${RST}  ${DIM}$1${RST}"
 }
 
+print_item() {
+    echo -e "     ${BBLK}·${RST}  $1"
+}
+
+# Run a command with a live spinner
 run_command() {
     local cmd="$1"
     local desc="$2"
-    
     print_info "$desc"
-    if ! eval "$cmd"; then
-        print_error "Failed: $desc"
-    fi
-    print_success "$desc completed"
+    eval "$cmd" > /tmp/hypr_install_log 2>&1 &
+    local pid=$!
+    spinner "$pid" "$desc"
+    wait "$pid" || print_error "Failed: $desc (see /tmp/hypr_install_log)"
+    print_success "$desc"
 }
 
 ################################################################################
@@ -55,238 +150,207 @@ SCRIPTS_SRC="$REPO_ROOT/scripts"
 CONFIGS_SRC="$REPO_ROOT/configs"
 WALLPAPERS_SRC="$REPO_ROOT/Pictures/Wallpapers"
 
+print_banner
+
 # Check root
 [[ "$EUID" -eq 0 ]] || print_error "This script must be run as root (use: sudo $0)"
+
+echo -e "  ${DIM}User:${RST}  ${BLD}${WHT}${USER_NAME}${RST}"
+echo -e "  ${DIM}Home:${RST}  ${BLD}${WHT}${USER_HOME}${RST}"
+echo -e "  ${DIM}Repo:${RST}  ${BLD}${WHT}${REPO_ROOT}${RST}"
+echo ""
+
+# Prompt for user password once and cache it for the full install
+echo -e "  ${BLD}${BYLW}Password required${RST}  ${DIM}(enter once — cached for the full install)${RST}"
+echo ""
+
+# Read password interactively
+read -r -s -p "  $(echo -e "${BCYN}Password for ${USER_NAME}:${RST} ")" USER_PASS
+echo ""
+
+# Validate the password
+if ! echo "$USER_PASS" | su -c "true" "$USER_NAME" 2>/dev/null; then
+    print_error "Incorrect password"
+fi
+
+# Write a sudoers drop-in so USER_NAME can sudo without password for this session
+SUDOERS_TMP="/etc/sudoers.d/hypr-install-tmp"
+echo "$USER_NAME ALL=(ALL) NOPASSWD: ALL" > "$SUDOERS_TMP"
+chmod 0440 "$SUDOERS_TMP"
+# Remove it when the script exits
+trap 'rm -f "$SUDOERS_TMP"; echo ""' EXIT
+
+echo ""
+print_success "Credentials accepted — no further prompts during install"
+echo ""
 
 ################################################################################
 # SYSTEM UPDATE & DRIVERS
 ################################################################################
 
-print_header "System Update & Driver Installation"
+print_phase "System Update & Driver Detection"
 
-run_command "pacman -Syu --noconfirm" "Updating system packages"
+run_command "pacman -Syu --noconfirm" "Synchronizing package databases & upgrading system"
 
-# Detect and install GPU drivers
 GPU_INFO=$(lspci | grep -Ei "VGA|3D" || true)
 
+echo ""
+echo -e "  ${BLD}${BYLW}GPU Detection${RST}"
+
 if echo "$GPU_INFO" | grep -qi nvidia; then
-    print_info "NVIDIA GPU detected"
+    echo -e "  ${BBLU}▸${RST}  ${BLD}NVIDIA${RST} GPU detected"
     run_command "pacman -S --noconfirm --needed nvidia-open-dkms nvidia-utils lib32-nvidia-utils linux-headers" \
-        "Installing NVIDIA drivers"
+        "Installing NVIDIA open-source drivers"
 elif echo "$GPU_INFO" | grep -qi amd; then
-    print_info "AMD GPU detected"
+    echo -e "  ${BRED}▸${RST}  ${BLD}AMD${RST} GPU detected"
     run_command "pacman -S --noconfirm --needed xf86-video-amdgpu mesa vulkan-radeon lib32-vulkan-radeon linux-headers" \
-        "Installing AMD drivers"
+        "Installing AMD drivers & Vulkan support"
 elif echo "$GPU_INFO" | grep -qi intel; then
-    print_info "Intel GPU detected"
+    echo -e "  ${BCYN}▸${RST}  ${BLD}Intel${RST} GPU detected"
     run_command "pacman -S --noconfirm --needed mesa vulkan-intel lib32-vulkan-intel linux-headers" \
-        "Installing Intel drivers"
+        "Installing Intel drivers & Vulkan support"
 else
-    print_info "No dedicated GPU detected - using generic drivers"
+    echo -e "  ${BBLK}▸${RST}  No dedicated GPU found — using generic drivers"
 fi
 
 ################################################################################
 # PACKAGE INSTALLATION
 ################################################################################
 
-print_header "Installing Core Packages"
+print_phase "Package Installation"
 
-# Core window manager and compositor packages
 CORE_PACKAGES=(
-    hyprland
-    waybar
-    swww
-    mako
-    sddm
+    hyprland waybar swww mako sddm
     xdg-desktop-portal-hyprland
 )
-
-# Terminal and shell
-TERMINAL_PACKAGES=(
-    kitty
-    starship
-    fastfetch
-)
-
-# System utilities
+TERMINAL_PACKAGES=(kitty starship fastfetch)
 UTILITY_PACKAGES=(
-    grim
-    slurp
-    wl-clipboard
-    polkit-kde-agent
-    bluez
-    bluez-utils
-    blueman
-    udiskie
-    udisks2
-    gvfs
+    grim slurp wl-clipboard polkit-kde-agent
+    bluez bluez-utils blueman udiskie udisks2 gvfs
 )
+APP_PACKAGES=(firefox code mpv imv pavucontrol btop gnome-disk-utility)
+DEV_PACKAGES=(git base-devel wget curl nano jq)
+FONT_PACKAGES=(ttf-jetbrains-mono-nerd ttf-hack-nerd ttf-iosevka-nerd ttf-cascadia-code-nerd)
+MEDIA_PACKAGES=(poppler imagemagick ffmpeg chafa)
+COMPRESSION_PACKAGES=(unzip p7zip tar gzip xz bzip2 unrar trash-cli)
+PYTHON_PACKAGES=(python-pyqt5 python-pyqt6 python-pillow python-opencv)
+QT_PACKAGES=(qt5-wayland qt6-wayland)
 
-# Applications
-APP_PACKAGES=(
-    firefox
-    code
-    mpv
-    imv
-    pavucontrol
-    btop
-    gnome-disk-utility
-)
-
-# Development tools
-DEV_PACKAGES=(
-    git
-    base-devel
-    wget
-    curl
-    nano
-    jq
-)
-
-# Fonts
-FONT_PACKAGES=(
-    ttf-jetbrains-mono-nerd
-    ttf-iosevka-nerd
-    ttf-cascadia-code-nerd
-)
-
-# Media and file handling
-MEDIA_PACKAGES=(
-    poppler
-    imagemagick
-    ffmpeg
-    chafa
-)
-
-# Compression tools
-COMPRESSION_PACKAGES=(
-    unzip
-    p7zip
-    tar
-    gzip
-    xz
-    bzip2
-    unrar
-    trash-cli
-)
-
-# Python dependencies
-PYTHON_PACKAGES=(
-    python-pyqt5
-    python-pyqt6
-    python-pillow
-    python-opencv
-)
-
-# Qt/Wayland support
-QT_PACKAGES=(
-    qt5-wayland
-    qt6-wayland
-)
-
-# Combine all packages
 ALL_PACKAGES=(
-    "${CORE_PACKAGES[@]}"
-    "${TERMINAL_PACKAGES[@]}"
-    "${UTILITY_PACKAGES[@]}"
-    "${APP_PACKAGES[@]}"
-    "${DEV_PACKAGES[@]}"
-    "${FONT_PACKAGES[@]}"
-    "${MEDIA_PACKAGES[@]}"
-    "${COMPRESSION_PACKAGES[@]}"
-    "${PYTHON_PACKAGES[@]}"
-    "${QT_PACKAGES[@]}"
+    "${CORE_PACKAGES[@]}" "${TERMINAL_PACKAGES[@]}" "${UTILITY_PACKAGES[@]}"
+    "${APP_PACKAGES[@]}" "${DEV_PACKAGES[@]}" "${FONT_PACKAGES[@]}"
+    "${MEDIA_PACKAGES[@]}" "${COMPRESSION_PACKAGES[@]}"
+    "${PYTHON_PACKAGES[@]}" "${QT_PACKAGES[@]}"
 )
+
+# Pretty package group listing
+echo ""
+declare -A GROUP_LABELS=(
+    ["Core WM"]="${CORE_PACKAGES[*]}"
+    ["Terminal"]="${TERMINAL_PACKAGES[*]}"
+    ["Utilities"]="${UTILITY_PACKAGES[*]}"
+    ["Apps"]="${APP_PACKAGES[*]}"
+    ["Dev Tools"]="${DEV_PACKAGES[*]}"
+    ["Fonts"]="${FONT_PACKAGES[*]}"
+    ["Media"]="${MEDIA_PACKAGES[*]}"
+    ["Archives"]="${COMPRESSION_PACKAGES[*]}"
+    ["Python"]="${PYTHON_PACKAGES[*]}"
+    ["Qt/Wayland"]="${QT_PACKAGES[*]}"
+)
+
+for label in "Core WM" "Terminal" "Utilities" "Apps" "Dev Tools" "Fonts" "Media" "Archives" "Python" "Qt/Wayland"; do
+    echo -e "  ${BBLU}${label}${RST}  ${DIM}${GROUP_LABELS[$label]}${RST}"
+done
+echo ""
 
 run_command "pacman -S --noconfirm --needed ${ALL_PACKAGES[*]}" \
-    "Installing packages"
+    "Installing all packages  (${#ALL_PACKAGES[@]} total)"
 
-# Install polkit fallback
 pacman -S --noconfirm --needed polkit-gnome 2>/dev/null || true
+print_success "polkit-gnome (fallback) installed"
 
 ################################################################################
 # AUR HELPER & PACKAGES
 ################################################################################
 
-print_header "Installing AUR Helper and Packages"
+print_phase "AUR Helper — Yay"
 
 if ! command -v yay &>/dev/null; then
-    print_info "Installing Yay AUR helper"
-    run_command "rm -rf /tmp/yay" "Cleaning previous Yay installation"
+    print_info "Yay not found — building from AUR"
+    run_command "rm -rf /tmp/yay" "Cleaning previous Yay build directory"
     run_command "sudo -u $USER_NAME git clone https://aur.archlinux.org/yay.git /tmp/yay" \
-        "Cloning Yay repository"
-    (cd /tmp/yay && sudo -u $USER_NAME makepkg -si --noconfirm)
-    print_success "Yay installed"
+        "Cloning Yay source"
+    (cd /tmp/yay && sudo -u "$USER_NAME" makepkg -si --noconfirm) \
+        > /tmp/hypr_install_log 2>&1 &
+    spinner "$!" "Compiling and installing Yay"
+    wait $! || print_error "Yay build failed (see /tmp/hypr_install_log)"
+    print_success "Yay built and installed"
 else
-    print_success "Yay already installed"
+    print_success "Yay is already installed — skipping"
 fi
 
-run_command "sudo -u $USER_NAME yay -S --noconfirm python-pywal16 python-pywalfox" \
-    "Installing Pywal16 and Pywalfox from AUR"
+sudo -u "$USER_NAME" yay -S --noconfirm python-pywal16 python-pywalfox \
+    > /tmp/hypr_install_log 2>&1 &
+spinner "$!" "Installing Pywal16 & Pywalfox from AUR"
+wait $! || print_error "Failed to install AUR packages (see /tmp/hypr_install_log)"
+print_success "Pywal16 & Pywalfox installed"
 
 ################################################################################
 # DIRECTORY STRUCTURE
 ################################################################################
 
-print_header "Creating Directory Structure"
+print_phase "Directory Structure"
 
-# Create config directories
 CONFIG_DIRS=(
-    "$CONFIG_DIR/hypr"
-    "$CONFIG_DIR/waybar"
-    "$CONFIG_DIR/kitty"
-    "$CONFIG_DIR/fastfetch"
-    "$CONFIG_DIR/mako"
-    "$CONFIG_DIR/scripts"
-    "$CONFIG_DIR/wal/templates"
-    "$CONFIG_DIR/btop"
+    "$CONFIG_DIR/hypr"    "$CONFIG_DIR/waybar"
+    "$CONFIG_DIR/kitty"   "$CONFIG_DIR/fastfetch"
+    "$CONFIG_DIR/mako"    "$CONFIG_DIR/scripts"
+    "$CONFIG_DIR/wal/templates"  "$CONFIG_DIR/btop"
 )
 
 for dir in "${CONFIG_DIRS[@]}"; do
     sudo -u "$USER_NAME" mkdir -p "$dir"
+    print_item "${DIM}$dir${RST}"
 done
 
 sudo -u "$USER_NAME" mkdir -p "$WAL_CACHE"
 sudo -u "$USER_NAME" mkdir -p "$USER_HOME/Pictures/Wallpapers"
-print_success "Directory structure created"
+print_success "Directory tree created"
 
 ################################################################################
 # CONFIGURATION FILES
 ################################################################################
 
-print_header "Installing Configuration Files"
+print_phase "Configuration Files"
 
-# Clean old symlinks to prevent conflicts
-print_info "Removing old symlinks"
+print_info "Removing stale symlinks"
 OLD_SYMLINKS=(
     "$CONFIG_DIR/mako/config"
     "$CONFIG_DIR/waybar/style.css"
     "$CONFIG_DIR/kitty/kitty.conf"
     "$CONFIG_DIR/hypr/colors-hyprland.conf"
 )
-
 for symlink in "${OLD_SYMLINKS[@]}"; do
     sudo -u "$USER_NAME" rm -f "$symlink" 2>/dev/null || true
 done
+print_success "Old symlinks cleared"
 
-# Copy Hyprland configuration
+# Hyprland
 if [[ -d "$CONFIGS_SRC/hypr" ]]; then
-    print_info "Copying Hyprland configuration"
-    sudo -u "$USER_NAME" cp -rf "$CONFIGS_SRC/hypr/"* "$CONFIG_DIR/hypr/" 2>/dev/null || true
-    print_success "Hyprland configuration installed"
+    run_command "sudo -u $USER_NAME cp -rf '$CONFIGS_SRC/hypr/'* '$CONFIG_DIR/hypr/' 2>/dev/null || true" \
+        "Installing Hyprland config"
 fi
 
-# Copy Waybar configuration
+# Waybar
 if [[ -d "$CONFIGS_SRC/waybar" ]]; then
-    print_info "Copying Waybar configuration"
-    sudo -u "$USER_NAME" cp -rf "$CONFIGS_SRC/waybar/"* "$CONFIG_DIR/waybar/" 2>/dev/null || true
-    print_success "Waybar configuration installed"
+    run_command "sudo -u $USER_NAME cp -rf '$CONFIGS_SRC/waybar/'* '$CONFIG_DIR/waybar/' 2>/dev/null || true" \
+        "Installing Waybar config"
 fi
 
-# Copy or create Kitty configuration
+# Kitty
 if [[ -f "$CONFIGS_SRC/kitty/kitty.conf" ]]; then
-    print_info "Copying Kitty configuration"
-    sudo -u "$USER_NAME" cp "$CONFIGS_SRC/kitty/kitty.conf" "$CONFIG_DIR/kitty/kitty.conf"
+    run_command "sudo -u $USER_NAME cp '$CONFIGS_SRC/kitty/kitty.conf' '$CONFIG_DIR/kitty/kitty.conf'" \
+        "Installing Kitty config"
 else
     print_info "Creating default Kitty configuration"
     sudo -u "$USER_NAME" cat > "$CONFIG_DIR/kitty/kitty.conf" << 'KITTYCONF'
@@ -310,49 +374,44 @@ sync_to_monitor yes
 # Dynamic color scheme from Pywal
 include ~/.cache/wal/kitty-wal.conf
 KITTYCONF
+    print_success "Default Kitty config written"
 fi
-print_success "Kitty configuration installed"
 
-# Copy Mako configuration
+# Mako
 if [[ -f "$CONFIGS_SRC/mako/config" ]]; then
-    print_info "Copying Mako configuration"
-    sudo -u "$USER_NAME" cp "$CONFIGS_SRC/mako/config" "$CONFIG_DIR/mako/config"
-    print_success "Mako configuration installed"
+    run_command "sudo -u $USER_NAME cp '$CONFIGS_SRC/mako/config' '$CONFIG_DIR/mako/config'" \
+        "Installing Mako config"
 fi
 
-# Copy Fastfetch configuration
+# Fastfetch
 if [[ -f "$CONFIGS_SRC/fastfetch/config.jsonc" ]]; then
-    print_info "Copying Fastfetch configuration"
-    sudo -u "$USER_NAME" cp "$CONFIGS_SRC/fastfetch/config.jsonc" "$CONFIG_DIR/fastfetch/config.jsonc"
-    print_success "Fastfetch configuration installed"
+    run_command "sudo -u $USER_NAME cp '$CONFIGS_SRC/fastfetch/config.jsonc' '$CONFIG_DIR/fastfetch/config.jsonc'" \
+        "Installing Fastfetch config"
 fi
 
-# Copy Starship configuration
+# Starship
 if [[ -f "$CONFIGS_SRC/starship/starship.toml" ]]; then
-    print_info "Copying Starship configuration"
-    sudo -u "$USER_NAME" cp "$CONFIGS_SRC/starship/starship.toml" "$CONFIG_DIR/starship.toml"
-    print_success "Starship configuration installed"
+    run_command "sudo -u $USER_NAME cp '$CONFIGS_SRC/starship/starship.toml' '$CONFIG_DIR/starship.toml'" \
+        "Installing Starship prompt config"
 fi
 
-# Copy btop configuration
+# btop
 if [[ -f "$CONFIGS_SRC/btop/btop.conf" ]]; then
-    print_info "Copying btop configuration"
-    sudo -u "$USER_NAME" cp "$CONFIGS_SRC/btop/btop.conf" "$CONFIG_DIR/btop/btop.conf"
-    print_success "btop configuration installed"
+    run_command "sudo -u $USER_NAME cp '$CONFIGS_SRC/btop/btop.conf' '$CONFIG_DIR/btop/btop.conf'" \
+        "Installing btop config"
 fi
 
-# Copy Pywal templates
+# Pywal templates
 if [[ -d "$CONFIGS_SRC/wal/templates" ]]; then
-    print_info "Copying Pywal templates"
-    sudo -u "$USER_NAME" cp -rf "$CONFIGS_SRC/wal/templates/"* "$CONFIG_DIR/wal/templates/" 2>/dev/null || true
-    print_success "Pywal templates installed"
+    run_command "sudo -u $USER_NAME cp -rf '$CONFIGS_SRC/wal/templates/'* '$CONFIG_DIR/wal/templates/' 2>/dev/null || true" \
+        "Installing Pywal templates"
 fi
 
 ################################################################################
 # GPU-SPECIFIC ENVIRONMENT
 ################################################################################
 
-print_header "Configuring GPU Environment"
+print_phase "GPU Environment"
 
 GPU_ENV_FILE="$CONFIG_DIR/hypr/gpu-env.conf"
 
@@ -364,7 +423,7 @@ sudo -u "$USER_NAME" cat > "$GPU_ENV_FILE" << 'GPUHEADER'
 GPUHEADER
 
 if echo "$GPU_INFO" | grep -qi nvidia; then
-    print_info "Configuring for NVIDIA GPU"
+    print_info "Writing NVIDIA Wayland environment variables"
     sudo -u "$USER_NAME" cat >> "$GPU_ENV_FILE" << 'NVIDIAENV'
 
 # NVIDIA-specific environment variables
@@ -384,7 +443,7 @@ cursor {
 NVIDIAENV
 
 elif echo "$GPU_INFO" | grep -qi amd; then
-    print_info "Configuring for AMD GPU"
+    print_info "Writing AMD Wayland environment variables"
     sudo -u "$USER_NAME" cat >> "$GPU_ENV_FILE" << 'AMDENV'
 
 # AMD-specific environment variables
@@ -394,7 +453,7 @@ env = QT_QPA_PLATFORM,wayland
 AMDENV
 
 elif echo "$GPU_INFO" | grep -qi intel; then
-    print_info "Configuring for Intel GPU"
+    print_info "Writing Intel Wayland environment variables"
     sudo -u "$USER_NAME" cat >> "$GPU_ENV_FILE" << 'INTELENV'
 
 # Intel-specific environment variables
@@ -404,7 +463,7 @@ env = QT_QPA_PLATFORM,wayland
 INTELENV
 
 else
-    print_info "Using default Wayland environment"
+    print_info "Writing default Wayland environment variables"
     sudo -u "$USER_NAME" cat >> "$GPU_ENV_FILE" << 'DEFAULTENV'
 
 # Default Wayland environment variables
@@ -413,35 +472,25 @@ env = QT_QPA_PLATFORM,wayland
 DEFAULTENV
 fi
 
-print_success "GPU environment configured: $GPU_ENV_FILE"
+print_success "GPU environment written → $GPU_ENV_FILE"
 
 ################################################################################
 # SCRIPTS & UTILITIES
 ################################################################################
 
-print_header "Installing Scripts and Utilities"
+print_phase "Scripts, Wallpapers & Shell"
 
-# Copy user scripts
 if [[ -d "$SCRIPTS_SRC" ]]; then
-    print_info "Copying scripts"
-    sudo -u "$USER_NAME" cp -rf "$SCRIPTS_SRC/"* "$CONFIG_DIR/scripts/"
-    sudo -u "$USER_NAME" chmod +x "$CONFIG_DIR/scripts/"* 2>/dev/null || true
-    print_success "Scripts installed and made executable"
+    run_command "sudo -u $USER_NAME cp -rf '$SCRIPTS_SRC/'* '$CONFIG_DIR/scripts/' && sudo -u $USER_NAME chmod +x '$CONFIG_DIR/scripts/'* 2>/dev/null || true" \
+        "Installing user scripts"
 fi
 
-# Copy wallpapers
 if [[ -d "$WALLPAPERS_SRC" ]]; then
-    print_info "Copying wallpapers"
-    sudo -u "$USER_NAME" cp -rf "$WALLPAPERS_SRC/"* "$USER_HOME/Pictures/Wallpapers/"
-    print_success "Wallpapers installed"
+    run_command "sudo -u $USER_NAME cp -rf '$WALLPAPERS_SRC/'* '$USER_HOME/Pictures/Wallpapers/'" \
+        "Copying wallpapers"
 fi
 
-################################################################################
-# BASHRC CONFIGURATION
-################################################################################
-
-print_header "Configuring Shell Environment"
-
+print_info "Writing ~/.bashrc"
 sudo -u "$USER_NAME" cat > "$USER_HOME/.bashrc" << 'BASHRC'
 #!/bin/bash
 # Bash configuration for Hyprland setup
@@ -474,112 +523,114 @@ alias rm='rm -i'
 alias mv='mv -i'
 alias cp='cp -i'
 BASHRC
-
 print_success "Shell environment configured"
 
 ################################################################################
 # PYWAL SYMLINKS
 ################################################################################
 
-print_header "Creating Pywal Symlinks"
+print_phase "Pywal Symlinks"
 
-# Create symlinks for Pywal-generated configs
 if [[ -f "$CONFIG_DIR/wal/templates/mako-config" ]]; then
     sudo -u "$USER_NAME" ln -sf "$WAL_CACHE/mako-config" "$CONFIG_DIR/mako/config"
-    print_info "Linked: mako config"
+    print_success "Linked: mako config"
 fi
 
 if [[ -f "$CONFIG_DIR/wal/templates/waybar-style.css" ]]; then
     sudo -u "$USER_NAME" ln -sf "$WAL_CACHE/waybar-style.css" "$CONFIG_DIR/waybar/style.css"
-    print_info "Linked: waybar style.css"
+    print_success "Linked: waybar style.css"
 fi
 
 if [[ -f "$CONFIG_DIR/wal/templates/colors-hyprland.conf" ]]; then
     sudo -u "$USER_NAME" ln -sf "$WAL_CACHE/colors-hyprland.conf" "$CONFIG_DIR/hypr/colors-hyprland.conf"
-    print_info "Linked: Hyprland colors"
+    print_success "Linked: Hyprland colors"
 fi
 
-print_success "Pywal symlinks created"
-
 ################################################################################
-# SYSTEM SERVICES
+# SYSTEM SERVICES & PERMISSIONS
 ################################################################################
 
-print_header "Enabling System Services"
+print_phase "Services & Permissions"
 
-systemctl enable sddm.service 2>/dev/null || true
-print_success "Display manager (SDDM) enabled"
-
-systemctl enable bluetooth.service 2>/dev/null || true
-print_success "Bluetooth service enabled"
-
-################################################################################
-# PERMISSIONS
-################################################################################
-
-print_header "Setting Permissions"
+systemctl enable sddm.service      2>/dev/null && print_success "SDDM display manager enabled"    || true
+systemctl enable bluetooth.service 2>/dev/null && print_success "Bluetooth service enabled"       || true
 
 chown -R "$USER_NAME:$USER_NAME" "$CONFIG_DIR" "$CACHE_DIR" "$USER_HOME/Pictures" 2>/dev/null || true
-print_success "Ownership configured correctly"
+print_success "Ownership set: ${USER_NAME}:${USER_NAME}"
 
 ################################################################################
 # INSTALLATION COMPLETE
 ################################################################################
 
 clear
-cat << 'EOF'
+print_banner
 
-╔═══════════════════════════════════════════════════════════════╗
-║                                                               ║
-║     ✓  HYPRLAND INSTALLATION COMPLETE                        ║
-║                                                               ║
-╚═══════════════════════════════════════════════════════════════╝
-
-EOF
-
-print_success "Installation completed successfully!"
+echo ""
+hr "═" "$BGRN"
+center "${BLD}${BGRN}  ✔  INSTALLATION COMPLETE  ✔${RST}"
+hr "═" "$BGRN"
 echo ""
 
-print_header "Next Steps"
+# Summary table
+echo -e "  ${BLD}${BWHT}What was installed:${RST}"
 echo ""
-echo "  1. Reboot your system:"
-echo "     └─ sudo reboot"
+echo -e "  ${BGRN}✔${RST}  System updated & GPU drivers configured"
+echo -e "  ${BGRN}✔${RST}  ${#ALL_PACKAGES[@]} packages installed via pacman"
+echo -e "  ${BGRN}✔${RST}  Yay AUR helper + Pywal16 & Pywalfox"
+echo -e "  ${BGRN}✔${RST}  All dotfiles & configs deployed"
+echo -e "  ${BGRN}✔${RST}  GPU environment written to hypr/gpu-env.conf"
+echo -e "  ${BGRN}✔${RST}  Pywal symlinks created"
+echo -e "  ${BGRN}✔${RST}  SDDM & Bluetooth services enabled"
 echo ""
-echo "  2. At the login screen (SDDM), select 'Hyprland' session"
+hr "─" "$BBLK"
+
 echo ""
-echo "  3. After logging in, open a terminal (SUPER+RETURN) and set a wallpaper:"
-echo "     └─ wal -i ~/Pictures/Wallpapers/<your-wallpaper.jpg>"
-echo "     └─ This will generate color schemes and start services"
+echo -e "  ${BLD}${BYLW}󰣐  Next Steps${RST}"
+echo ""
+echo -e "  ${BBLU}1.${RST}  Reboot your system"
+echo -e "      ${DIM}sudo reboot${RST}"
+echo ""
+echo -e "  ${BBLU}2.${RST}  At the SDDM login screen, select ${BLD}Hyprland${RST} as your session"
+echo ""
+echo -e "  ${BBLU}3.${RST}  Open a terminal ${DIM}(SUPER+RETURN)${RST} and set your wallpaper:"
+echo -e "      ${DIM}wal -i ~/Pictures/Wallpapers/<your-wallpaper.jpg>${RST}"
+echo ""
+hr "─" "$BBLK"
+
+echo ""
+echo -e "  ${BLD}${BYLW}  Key Bindings${RST}"
 echo ""
 
-print_header "Key Bindings"
-echo ""
-echo "  SUPER + RETURN     Open terminal (Kitty)"
-echo "  SUPER + Q          Close active window"
-echo "  SUPER + ESC        Exit Hyprland"
-echo "  SUPER + F          File manager"
-echo "  SUPER + W          Wallpaper picker"
-echo "  SUPER + D          Application picker"
-echo "  SUPER + B          Browser (Firefox)"
-echo "  SUPER + C          Code editor (VS Code)"
-echo "  SUPER + I          System monitor (btop)"
-echo "  SUPER + V          Toggle floating window"
-echo ""
-echo "  SUPER + H/L/K/J    Focus window (left/right/up/down)"
-echo "  SUPER + [1-5]      Switch to workspace 1-5"
-echo "  SUPER + SHIFT + [1-5]  Move window to workspace 1-5"
-echo "  SUPER + ALT + E    Empty trash"
-echo ""
-echo "  Full configuration: ~/.config/hypr/hyprland.conf"
-echo ""
+bind_col() { echo -e "  ${BCYN}$1${RST}$(printf '%*s' $((24 - ${#1})) '')${DIM}$2${RST}"; }
 
-print_header "Useful Commands"
+bind_col "SUPER + RETURN"      "Open terminal (Kitty)"
+bind_col "SUPER + Q"           "Close active window"
+bind_col "SUPER + ESC"         "Exit Hyprland"
+bind_col "SUPER + D"           "Application picker"
+bind_col "SUPER + F"           "File manager"
+bind_col "SUPER + W"           "Wallpaper picker"
+bind_col "SUPER + B"           "Browser (Firefox)"
+bind_col "SUPER + C"           "Code editor (VS Code)"
+bind_col "SUPER + I"           "System monitor (btop)"
+bind_col "SUPER + V"           "Toggle floating window"
 echo ""
-echo "  Generate new theme:     wal -i /path/to/image"
-echo "  Reload Waybar:          killall waybar && waybar &"
-echo "  Reload Hyprland:        hyprctl reload"
-echo "  View logs:              journalctl -xeu sddm"
+bind_col "SUPER + H/L/K/J"    "Focus window (←→↑↓)"
+bind_col "SUPER + [1-5]"       "Switch workspace"
+bind_col "SUPER+SHIFT + [1-5]" "Move window to workspace"
+bind_col "SUPER+ALT + E"       "Empty trash"
 echo ""
+hr "─" "$BBLK"
 
-print_success "Enjoy your new Hyprland setup!"
+echo ""
+echo -e "  ${BLD}${BYLW}  Useful Commands${RST}"
+echo ""
+echo -e "  ${DIM}Generate new theme   ${RST}${BCYN}wal -i /path/to/image${RST}"
+echo -e "  ${DIM}Reload Waybar        ${RST}${BCYN}killall waybar && waybar &${RST}"
+echo -e "  ${DIM}Reload Hyprland      ${RST}${BCYN}hyprctl reload${RST}"
+echo -e "  ${DIM}View logs            ${RST}${BCYN}journalctl -xeu sddm${RST}"
+echo -e "  ${DIM}Full config          ${RST}${BCYN}~/.config/hypr/hyprland.conf${RST}"
+echo ""
+hr "═" "$BBLU"
+echo ""
+center "${DIM}Enjoy your new Hyprland setup  ·  Happy ricing!${RST}"
 echo ""

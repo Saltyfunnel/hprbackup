@@ -1,31 +1,19 @@
 #!/bin/bash
-# ~/.config/scripts/setwall.sh
-# DO NOT TOUCH - WORKING LOGIC (With Mako Notification Fix)
-
 WALL="$1"
 
-# 1. Standard Pywal
+# Let wal run fully and apply everything as normal
 wal -i "$WALL"
 
-# 2. Stable SWWW
+# Set wallpaper immediately after
 swww img "$WALL" --transition-type simple
 
-# 3. The Sync Gap (Wait for files to write)
-sleep 0.5
+# Update fastfetch wallpaper cache
+ln -sf "$WALL" ~/.cache/current-wallpaper
 
-# 4. Component Reset
-killall waybar 2>/dev/null
-waybar &
+# Restart waybar and mako in parallel
+{ killall waybar 2>/dev/null; waybar & } &
+{ killall mako 2>/dev/null; sleep 0.1; mako & disown; } &
 
-# 5. Mako Restart & Notification
-killall mako 2>/dev/null
-sleep 0.3
-mako & 
-disown # This keeps mako running after the script exits
-
-# 6. Send the test notification
-# This will now trigger once mako is back up
-notify-send -i "$WALL" "Theme Updated" "Colors synced to $(basename "$WALL")"
-
-# 7. Hyprland Borders
 hyprctl reload
+
+notify-send -i "$WALL" "Theme Updated" "Colors synced to $(basename "$WALL")"

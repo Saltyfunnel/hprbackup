@@ -13,7 +13,7 @@ APP_DIRS = [
 ]
 ICON_SIZE = 24  
 TERMINAL = "kitty"
-FONT_NAME = "Fira Code"
+FONT_NAME = "Cascadia Code Nerd Font"
 FONT_SIZE = 10
 WINDOW_WIDTH = 680
 WINDOW_HEIGHT = 580
