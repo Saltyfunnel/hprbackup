@@ -266,9 +266,6 @@ echo ""
 run_command "pacman -S --noconfirm --needed ${ALL_PACKAGES[*]}" \
     "Installing all packages  (${#ALL_PACKAGES[@]} total)"
 
-pacman -S --noconfirm --needed polkit-gnome 2>/dev/null || true
-print_success "polkit-gnome (fallback) installed"
-
 ################################################################################
 # AUR HELPER & PACKAGES
 ################################################################################
