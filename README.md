@@ -9,18 +9,9 @@
 
  Dynamic Theming: Full integration with pywal to sync your system colors with your chosen wallpaper.
  
- ## 🖼️ Screenshots
+ ## 🖼️ Screenshot
 
 <img src="screenshots/screenshot1.png" alt="ustom Wallpaper Picker GUI" width="800"/>
-
-<img src="screenshots/screenshot2.png" alt="ustom Wallpaper Picker GUI" width="800"/>
-
-<img src="screenshots/screenshot3.png" alt="ustom Wallpaper Picker GUI" width="800"/>
-
-<img src="screenshots/screenshot4.png" alt="ustom Wallpaper Picker GUI" width="800"/>
-
-<img src="screenshots/screenshot5.png" alt="ustom Wallpaper Picker GUI" width="800"/>
-
 
 ## ⚠️ Installation
 
