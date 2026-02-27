@@ -23,7 +23,7 @@ git clone https://github.com/Saltyfunnel/hpr
 cd hpr
 chmod +x scripts/*.sh
 cd scripts
-sudo sh install.sh
+sudo /.install.sh
 ```
 
 💡 Startup Notes
