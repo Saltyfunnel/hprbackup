@@ -23,6 +23,24 @@ from PyQt5.QtGui import (QFont, QColor, QPalette, QPixmap, QImage,
 
 
 # ── Image / Thumbnail Loader ──────────────────────────────────────────────────
+class WrapLabel(QLabel):
+    """QLabel that breaks filenames at any character boundary."""
+    def __init__(self, text, parent=None):
+        # Insert zero-width spaces before each char so Qt wraps anywhere
+        super().__init__(text, parent)
+        self.setWordWrap(True)
+        self._raw = text
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        # Re-insert zero-width spaces based on how many chars fit per line
+        fm = self.fontMetrics()
+        w  = self.width() or 1
+        chars_per_line = max(1, w // max(1, fm.averageCharWidth()))
+        chunks = [self._raw[i:i+chars_per_line] for i in range(0, len(self._raw), chars_per_line)]
+        self.setText('\n'.join(chunks))
+
+
 class ThumbnailLoader(QThread):
     loaded = pyqtSignal(str, QPixmap)
 
@@ -327,7 +345,7 @@ class GridCell(QFrame):
             self.icon_label.setFont(QFont("Hack Nerd Font", icon_size // 2))
             self.icon_label.setStyleSheet(f"color: {fg};")
 
-        self.name_label = QLabel(p.name)
+        self.name_label = WrapLabel(p.name)
         self.name_label.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self.name_label.setWordWrap(True)
         self.name_label.setMaximumWidth(icon_size + 16)
@@ -780,27 +798,31 @@ class Breadcrumb(QWidget):
         for i, part in enumerate(parts):
             accumulated = str(Path(accumulated) / part) if accumulated else part
             acc = accumulated
-            btn = QPushButton(part)
+            label = "\uf07c" if part == '/' else part
+            btn = QPushButton(label)
+            btn.setFont(QFont("Hack Nerd Font", 11))
             btn.setFlat(True)
             btn.setStyleSheet(f"""
                 QPushButton {{
                     color: {accent};
                     font-weight: 600;
-                    padding: 2px 5px;
+                    padding: 0px 6px;
                     border: none;
                     border-radius: 4px;
-                    font-size: 13px;
                 }}
                 QPushButton:hover {{
                     background: rgba(255,255,255,0.08);
                 }}
             """)
             btn.setCursor(QCursor(Qt.PointingHandCursor))
+            btn.setFixedHeight(24)
             btn.clicked.connect(lambda _, p=acc: self.navigate.emit(p))
             self._layout.addWidget(btn)
-            if i < len(parts) - 1:
-                sep = QLabel(" / ")
-                sep.setStyleSheet("color: rgba(255,255,255,0.3); font-size: 13px;")
+            if i < len(parts) - 1 and part != '/':
+                sep = QLabel("/")
+                sep.setFont(QFont("Hack Nerd Font", 11))
+                sep.setFixedHeight(24)
+                sep.setStyleSheet("color: rgba(255,255,255,0.3); padding: 0px 2px;")
                 self._layout.addWidget(sep)
         self._layout.addStretch()
 
